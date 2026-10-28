@@ -50,6 +50,10 @@ SIP provider when an account is set, and to the other TECHO5 devices on your net
 |---|---|
 | `RECORD_AUDIO` | The wake word and voice. Asked for on first start. Without it there is no wake word. |
 | `CAMERA` | The Android front camera for the Home Assistant camera entity and optional RTSP stream. Asked for only after Camera streaming is turned on. |
+| `ACCESS_FINE_LOCATION` | Android 8–11 require it to receive nearby BLE advertisements. The app does not request device location. |
+| `BLUETOOTH`, `BLUETOOTH_ADMIN` | BLE scan and GATT access on Android 8–11. |
+| `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT` | BLE scan and GATT access on Android 12 and later. |
+| `WRITE_SECURE_SETTINGS` | On the tested JBL Link View only, explicitly granted through adb to control Android's ADB debugging setting from Home Assistant. Without this manual grant the switch is absent. OFF closes both USB and Wi-Fi ADB. |
 | `INTERNET` | `echod` talks to Home Assistant and the other TECHO5 devices; the app checks for updates. |
 | `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE` | The app tells `echod` the tablet's network addresses (Android 11 and later hide them from it) and updates them when the network changes. |
 | `CHANGE_WIFI_MULTICAST_STATE` | Lets mDNS in, so Home Assistant can find the panel. |
