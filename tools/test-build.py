@@ -4,6 +4,7 @@ import importlib.util
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 import warnings
@@ -24,6 +25,17 @@ class BuildBoundaryTests(unittest.TestCase):
  def test_release_rejects_shell_repository_and_non_https_feed(self):
   r=self.script('release.sh',{'RELEASE_CORE_REPO':'bad;command'});self.assertNotEqual(r.returncode,0);self.assertIn('invalid release repository',r.stderr)
   r=self.script('release.sh',{'RELEASE_UPDATE_URL':'http://example.invalid'});self.assertNotEqual(r.returncode,0);self.assertIn('HTTPS',r.stderr)
+ def test_fork_plan_records_repo_and_feed_without_network(self):
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);app=root/'app';(app/'tools').mkdir(parents=True);shutil.copyfile(HERE/'release.sh',app/'tools/release.sh')
+   core=root/'core';(core/'echod/internal/layout').mkdir(parents=True);(core/'echod/internal/layout/device_panel.go').write_text('package layout')
+   def git(*a):return subprocess.check_output(['git','-C',str(core),*a],stderr=subprocess.DEVNULL,text=True).strip()
+   git('init');git('add','.');git('-c','user.name=fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','-m','fixture')
+   git('remote','add','origin','https://github.com/example/core.git');git('update-ref','refs/remotes/origin/main',git('rev-parse','HEAD'))
+   env=dict(os.environ,RELEASE_CORE_REPO='example/core',RELEASE_PANEL_REPO='example/panel',RELEASE_UPDATE_URL='https://updates.example.invalid/panel')
+   r=subprocess.run(['sh',str(app/'tools/release.sh'),str(core)],env=env,capture_output=True,text=True)
+   self.assertEqual(r.returncode,0,r.stderr)
+   plan=(app/'build/release-plan').read_text();self.assertIn('core example/core',plan);self.assertIn('feed https://updates.example.invalid/panel',plan)
  def test_normalization_reproducible_and_preserves_payload(self):
   with tempfile.TemporaryDirectory() as d:
    paths=[Path(d)/'a.apk',Path(d)/'b.apk']

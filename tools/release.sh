@@ -36,6 +36,7 @@ WORKFLOW=.github/workflows/build.yml
 PUBLIC_UPDATE_URL=${RELEASE_UPDATE_URL:-https://github.com/$REPO/releases/latest/download}
 case "$PUBLIC_UPDATE_URL" in https://*) ;; *) echo "release feed must be HTTPS" >&2; exit 1 ;; esac
 case "$PUBLIC_UPDATE_URL" in *'"'*|*"'"*|*'`'*|*'$'*|*'\'*|*' '*) echo "unsafe release URL" >&2; exit 1 ;; esac
+printf '%s' "$PUBLIC_UPDATE_URL" | grep -q '[[:space:]]' && { echo "unsafe release URL whitespace" >&2; exit 1; }
 ABIS="arm64-v8a armeabi-v7a"
 
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -104,7 +105,7 @@ if [ ! -f "$plan" ]; then
 	code=$(( ( $(date -u +%s) - 1767225600 ) / 60 ))
 	tag=panel-v0.1.$code
 	mkdir -p "$b"
-	printf 'tag %s\ncode %s\ncommit %s\n' "$tag" "$code" "$commit" > "$plan"
+	printf 'tag %s\ncode %s\ncommit %s\ncore %s\npanel %s\nfeed %s\n' "$tag" "$code" "$commit" "$CORE" "$REPO" "$PUBLIC_UPDATE_URL" > "$plan"
 
 	t5=$(shown "$techo5")
 	echo "== release 0.1.$code planned, echod from techo5 $commit (on $published)"
@@ -119,6 +120,8 @@ fi
 
 tag=$(field "$plan" tag) code=$(field "$plan" code) commit=$(field "$plan" commit)
 [ -n "$tag" ] && [ -n "$code" ] && [ -n "$commit" ] || die "build/release-plan is not one this script wrote: tools/release.sh new"
+[ "$(field "$plan" core)" = "$CORE" ] && [ "$(field "$plan" panel)" = "$REPO" ] &&
+    [ "$(field "$plan" feed)" = "$PUBLIC_UPDATE_URL" ] || die "release context changed; create a new plan with tools/release.sh new"
 name=0.1.$code
 [ ! -f "$b/signing" ] || [ "$(cat "$b/signing")" = signed ] || die "unsigned candidates must be signed on the Mac before release"
 ci=$b/ci/$tag
@@ -161,7 +164,7 @@ if [ ! -f "$ci/attested" ]; then
 	echo
 	echo "Next, build the APK around them (the techo5 checkout is only read for the wake word models):"
 	echo
-	echo "  KEYSTORE=<release key> KEYSTORE_PASS_FILE=<its password file> PREBUILT_LIBS=build/ci/$tag tools/build-apk.sh <techo5 checkout>"
+	echo "  PANEL_UPDATE_URL='$PUBLIC_UPDATE_URL' KEYSTORE=<release key> KEYSTORE_PASS_FILE=<its password file> PREBUILT_LIBS=build/ci/$tag tools/build-apk.sh <techo5 checkout>"
 	echo
 	echo "and run this again: tools/release.sh"
 	exit 0
