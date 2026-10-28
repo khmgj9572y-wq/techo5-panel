@@ -6,7 +6,10 @@
 #   tools/build-apk.sh [path to techo5 checkout]    (default $TECHO5, else ../techo5)
 #
 # Settings, from the environment:
-#   KEYSTORE            the signing key (required). Kept outside every repository.
+#   OUT_DIR             disposable build directory (default: build/).
+#   UNSIGNED=1          build an unsigned release APK without reading any signing material.
+#   SOURCE_DATE_EPOCH   fixed ZIP timestamps for repeatable unsigned packaging.
+#   KEYSTORE            the signing key (required unless UNSIGNED=1). Kept outside every repository.
 #   KEYSTORE_PASS       its password, or
 #   KEYSTORE_PASS_FILE  a file holding it, outside every repository. Never put it in a script.
 #   KEY_ALIAS           the key's alias, when the keystore holds more than one.
@@ -52,8 +55,10 @@ MODEL_NAMES="okay_nabu hey_jarvis hey_mycroft alexa computer jarvis hey_friday g
 here=$(cd "$(dirname "$0")/.." && pwd)
 techo5=${1:-${TECHO5:-$here/../techo5}}
 sdk=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-${LOCALAPPDATA:-$HOME/AppData/Local}/Android/Sdk}}
-out=$here/build
+out=${OUT_DIR:-$here/build}
 debug=${DEBUG:-0}
+unsigned=${UNSIGNED:-0}
+case "$unsigned" in 0|1) ;; *) echo "UNSIGNED must be 0 or 1" >&2; exit 1 ;; esac
 exe=""
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exe=".exe" ;; esac
 
@@ -81,18 +86,24 @@ native() {
 }
 
 # The key and its password: never in the repository, the password never on a command line.
-keystore=${KEYSTORE:-}
-[ -n "$keystore" ] || die "set KEYSTORE to the signing key (see docs/building.md)"
-[ -f "$keystore" ] || die "no keystore at $keystore"
-inside_repo "$keystore" && die "the keystore is inside this repository; keep it outside every repository"
-if [ -n "${KEYSTORE_PASS_FILE:-}" ]; then
-	[ -f "$KEYSTORE_PASS_FILE" ] || die "no password file at $KEYSTORE_PASS_FILE"
-	inside_repo "$KEYSTORE_PASS_FILE" && die "the password file is inside this repository; keep it outside"
-	kspass="file:$(native "$KEYSTORE_PASS_FILE")"
-elif [ -n "${KEYSTORE_PASS:-}" ]; then
-	kspass="env:KEYSTORE_PASS"
+if [ "$unsigned" = 1 ]; then
+    [ "$debug" = 0 ] || die "unsigned candidates must not be debug builds"
+    [ -z "${KEYSTORE:-}${KEYSTORE_PASS_FILE:-}${KEYSTORE_PASS:-}${KEY_ALIAS:-}" ] ||
+        die "unsigned builds must receive no signing configuration"
 else
-	die "set KEYSTORE_PASS or KEYSTORE_PASS_FILE (see docs/building.md)"
+	keystore=${KEYSTORE:-}
+	[ -n "$keystore" ] || die "set KEYSTORE to the signing key (see docs/building.md)"
+	[ -f "$keystore" ] || die "no keystore at $keystore"
+	inside_repo "$keystore" && die "the keystore is inside this repository; keep it outside every repository"
+	if [ -n "${KEYSTORE_PASS_FILE:-}" ]; then
+		[ -f "$KEYSTORE_PASS_FILE" ] || die "no password file at $KEYSTORE_PASS_FILE"
+		inside_repo "$KEYSTORE_PASS_FILE" && die "the password file is inside this repository; keep it outside"
+		kspass="file:$(native "$KEYSTORE_PASS_FILE")"
+	elif [ -n "${KEYSTORE_PASS:-}" ]; then
+		kspass="env:KEYSTORE_PASS"
+	else
+		die "set KEYSTORE_PASS or KEYSTORE_PASS_FILE (see docs/building.md)"
+	fi
 fi
 
 prebuilt=${PREBUILT_LIBS:-}
@@ -179,6 +190,7 @@ else
 	tags=panel
 fi
 
+rm -f "$out/techo5-panel.apk" "$out/techo5-panel.apk.idsig" "$out/techo5-panel-unsigned.apk" "$out/signing"
 rm -rf "$out/apk" "$out/classes" "$out/dex" "$out/gen" "$out/res" "$out/update-url" "$out/kind" "$out/source"
 mkdir -p "$out/apk" "$out/classes" "$out/dex"
 
@@ -272,16 +284,27 @@ cp "$out/base.apk" "$out/unsigned.apk"
 cp "$out/dex/classes.dex" "$out/apk/"
 # jar names every entry with '/', on any system. The list is relative to $out/apk, files only.
 (cd "$out/apk" && jar ufM "$out/unsigned.apk" $(find . -type f | sed 's#^\./##' | sort))
+if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+    python3 "$here/tools/normalize-apk.py" "$out/unsigned.apk" "$SOURCE_DATE_EPOCH"
+fi
 "$bt/zipalign$exe" -f -p 4 "$out/unsigned.apk" "$out/aligned.apk"
 
-"$apksigner" sign --ks "$keystore" --ks-pass "$kspass" ${KEY_ALIAS:+--ks-key-alias "$KEY_ALIAS"} \
-	--out "$out/techo5-panel.apk" "$out/aligned.apk"
+if [ "$unsigned" = 1 ]; then
+    artifact=$out/techo5-panel-unsigned.apk
+    cp "$out/aligned.apk" "$artifact"
+    echo unsigned > "$out/signing"
+else
+    artifact=$out/techo5-panel.apk
+    "$apksigner" sign --ks "$keystore" --ks-pass "$kspass" ${KEY_ALIAS:+--ks-key-alias "$KEY_ALIAS"} \
+        --out "$artifact" "$out/aligned.apk"
+    echo signed > "$out/signing"
+fi
 rm -f "$out/base.apk" "$out/unsigned.apk" "$out/aligned.apk"
 
 if [ -n "$prebuilt" ]; then
-	sh "$here/tools/check-apk.sh" "$out/techo5-panel.apk" "$kind" "$prebuilt/SHA256SUMS"
+    sh "$here/tools/check-apk.sh" "$artifact" "$kind" "$prebuilt/SHA256SUMS"
 else
-	sh "$here/tools/check-apk.sh" "$out/techo5-panel.apk" "$kind"
+    sh "$here/tools/check-apk.sh" "$artifact" "$kind"
 fi
 
 echo "$code" > "$out/version-code"
@@ -295,4 +318,4 @@ else
 		> "$out/source"
 fi
 echo "== $kind build $name, updating from ${url:-nowhere}"
-ls -la "$out/techo5-panel.apk"
+ls -la "$artifact"

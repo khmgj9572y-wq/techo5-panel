@@ -27,10 +27,15 @@
 # carries any other echod than the attested pair.
 set -eu
 
-REPO=HuskerMinion/techo5-panel
-CORE=HuskerMinion/techo5
+REPO=${RELEASE_PANEL_REPO:-HuskerMinion/techo5-panel}
+CORE=${RELEASE_CORE_REPO:-HuskerMinion/techo5}
+for repo in "$REPO" "$CORE"; do
+    printf '%s\n' "$repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "invalid release repository" >&2; exit 1; }
+done
 WORKFLOW=.github/workflows/build.yml
-PUBLIC_UPDATE_URL=https://github.com/$REPO/releases/latest/download
+PUBLIC_UPDATE_URL=${RELEASE_UPDATE_URL:-https://github.com/$REPO/releases/latest/download}
+case "$PUBLIC_UPDATE_URL" in https://*) ;; *) echo "release feed must be HTTPS" >&2; exit 1 ;; esac
+case "$PUBLIC_UPDATE_URL" in *'"'*|*"'"*|*'`'*|*'$'*|*'\'*|*' '*) echo "unsafe release URL" >&2; exit 1 ;; esac
 ABIS="arm64-v8a armeabi-v7a"
 
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -87,7 +92,7 @@ if [ ! -f "$plan" ]; then
 	published=""
 	for remote in $(git -C "$techo5" remote); do
 		case "$(git -C "$techo5" remote get-url "$remote")" in
-		*github.com[:/]HuskerMinion/techo5 | *github.com[:/]HuskerMinion/techo5.git)
+		*github.com[:/]"$CORE" | *github.com[:/]"$CORE".git)
 			if [ -n "$(git -C "$techo5" branch -r --contains "$commit" --list "$remote/*")" ]; then
 				published=$remote
 			fi
@@ -115,6 +120,7 @@ fi
 tag=$(field "$plan" tag) code=$(field "$plan" code) commit=$(field "$plan" commit)
 [ -n "$tag" ] && [ -n "$code" ] && [ -n "$commit" ] || die "build/release-plan is not one this script wrote: tools/release.sh new"
 name=0.1.$code
+[ ! -f "$b/signing" ] || [ "$(cat "$b/signing")" = signed ] || die "unsigned candidates must be signed on the Mac before release"
 ci=$b/ci/$tag
 
 # 2. CI's libraries: the run the tag started, downloaded, checked against its SHA256SUMS, and each
