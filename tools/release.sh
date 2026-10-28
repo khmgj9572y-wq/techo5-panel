@@ -195,7 +195,7 @@ bt=$(ls -d "$sdk"/build-tools/* 2>/dev/null | sort -V | tail -1)
 apksigner=$bt/apksigner
 [ -f "$bt/apksigner.bat" ] && apksigner=$bt/apksigner.bat
 "$apksigner" verify --print-certs "$b/release/$apk" 2>/dev/null | grep -i 'certificate SHA-256' ||
-	echo "   (apksigner not found: check with apksigner verify --print-certs build/release/$apk)"
+    die "signed APK verification failed; nothing may be released"
 echo
 echo "To release it, write the notes to a file and run:"
 echo

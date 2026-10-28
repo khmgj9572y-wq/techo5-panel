@@ -171,3 +171,22 @@ It writes `build/release/techo5-panel-<code>.apk`, `build/release/version.json`,
 All four go up as assets of one release, marked latest. The app reads
 `https://github.com/HuskerMinion/techo5-panel/releases/latest/download/version.json` and then the APK
 named there.
+
+## Fleet fork: keyless worker and Mac signing
+
+The fork's `fleet/build-pipeline` branch supports `UNSIGNED=1`. That mode rejects every signing
+configuration variable before reading a key or password. It writes `techo5-panel-unsigned.apk` and
+`build/signing=unsigned`; it does not leave a stale signed APK beside the candidate. `OUT_DIR` selects
+a disposable output directory, so the source snapshot can be read-only. `SOURCE_DATE_EPOCH` normalizes
+ZIP timestamps before alignment. A release candidate still carries the two checksum-verified
+`PREBUILT_LIBS`, whose `version-code` sets both the package version and compiled daemon version.
+
+The private `khmgj9572y-wq/techo5-builds` orchestration repository builds clean, locked source snapshots
+on Linux and provides a separate Mac-only signer. The signer requires an owner-held plan outside the
+candidate bundle and an explicit, fingerprint-pinned existing signing profile outside every Git repo.
+No keys move to the worker, no new signing identity is generated, and signing does not publish or install.
+
+Legacy release tooling can target our forks with `RELEASE_CORE_REPO`, `RELEASE_PANEL_REPO` and
+`RELEASE_UPDATE_URL`; defaults remain upstream's. The private pipeline's promotion and signed firmware
+job stages are not enabled by these overrides. Firmware YubiKeys remain a separate owner-Mac authority.
+Run `python3 tools/test-build.py` for the unsigned/release boundary and ZIP-normalization tests.
